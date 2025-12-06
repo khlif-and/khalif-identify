@@ -18,11 +18,8 @@ type Config struct {
 }
 
 func LoadConfig() *Config {
-	// 1. Coba load .env di folder saat ini (cmd/api)
 	err := godotenv.Load()
 	if err != nil {
-		// 2. Jika gagal, coba load dari folder root (naik 2 level ke atas)
-		// Ini agar 'go run .' di cmd/api tetap bisa baca .env di root
 		err = godotenv.Load("../../.env")
 		if err != nil {
 			log.Println("⚠️  Warning: File .env tidak ditemukan, menggunakan Environment Variable sistem")

@@ -3,6 +3,7 @@ package usecase
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"mime/multipart"
 	"path/filepath"
@@ -59,7 +60,7 @@ func (u *userUseCase) Register(name, email, phone, password string, file multipa
 
 	currentCount, err := u.repo.CountByRoleID(TargetRoleID)
 	if err != nil {
-		return nil, errors.New("gagal mengecek kuota admin")
+		return nil, fmt.Errorf("gagal mengecek kuota admin: %v", err)
 	}
 
 	if currentCount >= MaxAdminCount {
