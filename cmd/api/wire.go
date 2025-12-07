@@ -57,11 +57,12 @@ func InitializeApp() (*App, error) {
 	return &App{}, nil
 }
 
+// Perbaikan: Return type diganti menjadi domain.UserUseCase
 func NewUserUseCaseWire(
 	repo domain.UserRepository,
 	cache domain.CacheRepository,
 	uploader *utils.AzureUploader,
 	secret JWTSecret,
-) usecase.UserUseCase {
+) domain.UserUseCase {
 	return usecase.NewUserUseCase(repo, cache, uploader, string(secret))
 }

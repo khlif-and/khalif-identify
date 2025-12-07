@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  identify:
+    container_name: khalif-server
+    build: .
+    restart: no
+    ports:
+      - "8081:8081"
+    env_file:
+      - .env
+    # Konek ke network pusat
+    networks:
+      - khalif_net
+
+# Gunakan network eksternal dari khalif-infra
+networks:
+  khalif_net:
+    external: true
+    name: khalif_network

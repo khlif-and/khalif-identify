@@ -3,19 +3,20 @@ package handler
 import (
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 
-	"khalif-identify/internal/usecase"
+	"khalif-identify/internal/domain"
 
 )
 
 type UserHandler struct {
-	useCase usecase.UserUseCase
+	useCase domain.UserUseCase
 }
 
-func NewUserHandler(u usecase.UserUseCase) *UserHandler {
+func NewUserHandler(u domain.UserUseCase) *UserHandler {
 	return &UserHandler{useCase: u}
 }
 
@@ -32,7 +33,7 @@ func (h *UserHandler) Register(c *gin.Context) {
 		return
 	}
 
-	user, err := h.useCase.Register(name, email, phone, password, file, header)
+	user, err := h.useCase.Register(c.Request.Context(), name, email, phone, password, file, header)
 	if err != nil {
 		log.Printf("[Register Failed] Usecase Error: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -55,7 +56,7 @@ func (h *UserHandler) RegisterCustomer(c *gin.Context) {
 		return
 	}
 
-	user, err := h.useCase.RegisterCustomer(name, email, phone, password, file, header)
+	user, err := h.useCase.RegisterCustomer(c.Request.Context(), name, email, phone, password, file, header)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -75,7 +76,7 @@ func (h *UserHandler) Login(c *gin.Context) {
 		return
 	}
 
-	token, user, err := h.useCase.Login(input.Email, input.Password)
+	token, user, err := h.useCase.Login(c.Request.Context(), input.Email, input.Password)
 	if err != nil {
 		log.Printf("[Login Failed] Auth Error (Email: %s): %v", input.Email, err)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
@@ -90,15 +91,24 @@ func (h *UserHandler) Login(c *gin.Context) {
 }
 
 func (h *UserHandler) GetAll(c *gin.Context) {
-	users, err := h.useCase.GetAllAdmins()
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "10"))
+
+	users, total, err := h.useCase.GetAllAdmins(c.Request.Context(), page, limit)
 	if err != nil {
 		log.Printf("[GetAll Failed] Error: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	log.Printf("[GetAll Success] Count: %d users retrieved", len(users))
-	c.JSON(http.StatusOK, gin.H{"data": users})
+	c.JSON(http.StatusOK, gin.H{
+		"data":  users,
+		"meta": gin.H{
+			"page":  page,
+			"limit": limit,
+			"total": total,
+		},
+	})
 }
 
 func (h *UserHandler) GetCountryCodes(c *gin.Context) {
@@ -119,7 +129,7 @@ func (h *UserHandler) UpdateProfile(c *gin.Context) {
 	password := c.PostForm("password")
 	file, header, _ := c.Request.FormFile("image")
 
-	updatedUser, err := h.useCase.UpdateProfile(userID, name, phone, password, file, header)
+	updatedUser, err := h.useCase.UpdateProfile(c.Request.Context(), userID, name, phone, password, file, header)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -145,7 +155,7 @@ func (h *UserHandler) Logout(c *gin.Context) {
 	}
 	tokenString := tokenSplit[1]
 
-	err := h.useCase.Logout(tokenString)
+	err := h.useCase.Logout(c.Request.Context(), tokenString)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to logout"})
 		return
@@ -162,7 +172,7 @@ func (h *UserHandler) GetProfile(c *gin.Context) {
 	}
 	userID := uint(userIDInterface.(float64))
 
-	user, err := h.useCase.GetProfile(userID)
+	user, err := h.useCase.GetProfile(c.Request.Context(), userID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
 		return

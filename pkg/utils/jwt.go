@@ -18,7 +18,7 @@ func CheckPasswordHash(p, hash string) bool {
 	return err == nil
 }
 
-func GenerateToken(userID uint, role, secret string) (string, error) {
+func GenerateToken(userID string, role, secret string) (string, error) {
 	claims := jwt.MapClaims{
 		"user_id": userID,
 		"role":    role,

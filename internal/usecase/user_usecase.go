@@ -1,7 +1,7 @@
 package usecase
 
 import (
-	"encoding/json"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -17,17 +17,6 @@ import (
 
 )
 
-type UserUseCase interface {
-	Register(name, email, phone, password string, file multipart.File, fileHeader *multipart.FileHeader) (*domain.User, error)
-	RegisterCustomer(name, email, phone, password string, file multipart.File, fileHeader *multipart.FileHeader) (*domain.User, error)
-	Login(email, password string) (string, *domain.User, error)
-	GetAllAdmins() ([]domain.User, error)
-	GetCountryCodes() []utils.Country
-	UpdateProfile(userID uint, name, phone, password string, file multipart.File, fileHeader *multipart.FileHeader) (*domain.User, error)
-	Logout(tokenString string) error
-	GetProfile(userID uint) (*domain.User, error)
-}
-
 type userUseCase struct {
 	repo      domain.UserRepository
 	cache     domain.CacheRepository
@@ -35,7 +24,7 @@ type userUseCase struct {
 	jwtSecret string
 }
 
-func NewUserUseCase(repo domain.UserRepository, cache domain.CacheRepository, uploader *utils.AzureUploader, jwtSecret string) UserUseCase {
+func NewUserUseCase(repo domain.UserRepository, cache domain.CacheRepository, uploader *utils.AzureUploader, jwtSecret string) domain.UserUseCase {
 	return &userUseCase{
 		repo:      repo,
 		cache:     cache,
@@ -48,7 +37,7 @@ func (u *userUseCase) GetCountryCodes() []utils.Country {
 	return utils.GetCountryList()
 }
 
-func (u *userUseCase) Register(name, email, phone, password string, file multipart.File, fileHeader *multipart.FileHeader) (*domain.User, error) {
+func (u *userUseCase) Register(ctx context.Context, name, email, phone, password string, file multipart.File, fileHeader *multipart.FileHeader) (*domain.User, error) {
 	formattedPhone, err := utils.FormatPhoneNumber(phone, "ID")
 	if err != nil {
 		return nil, err
@@ -58,7 +47,7 @@ func (u *userUseCase) Register(name, email, phone, password string, file multipa
 	const TargetRoleID = 1
 	const TargetRoleName = "Admin"
 
-	currentCount, err := u.repo.CountByRoleID(TargetRoleID)
+	currentCount, err := u.repo.CountByRoleID(ctx, TargetRoleID)
 	if err != nil {
 		return nil, fmt.Errorf("gagal mengecek kuota admin: %v", err)
 	}
@@ -91,6 +80,7 @@ func (u *userUseCase) Register(name, email, phone, password string, file multipa
 	}
 
 	user := &domain.User{
+		UUID:          uuid.New().String(),
 		Name:          name,
 		Email:         email,
 		PhoneNumber:   formattedPhone,
@@ -100,20 +90,16 @@ func (u *userUseCase) Register(name, email, phone, password string, file multipa
 		DominantColor: imgResult.DominantColor,
 	}
 
-	if err := u.repo.Create(user); err != nil {
+	if err := u.repo.Create(ctx, user); err != nil {
 		return nil, err
 	}
 
-	user.Role = domain.Role{
-		ID:   TargetRoleID,
-		Name: TargetRoleName,
-	}
-
-	u.cache.Del("list_admins")
+	user.Role = domain.Role{ID: TargetRoleID, Name: TargetRoleName}
+	u.cache.Del(ctx, "list_admins")
 	return user, nil
 }
 
-func (u *userUseCase) RegisterCustomer(name, email, phone, password string, file multipart.File, fileHeader *multipart.FileHeader) (*domain.User, error) {
+func (u *userUseCase) RegisterCustomer(ctx context.Context, name, email, phone, password string, file multipart.File, fileHeader *multipart.FileHeader) (*domain.User, error) {
 	formattedPhone, err := utils.FormatPhoneNumber(phone, "ID")
 	if err != nil {
 		return nil, err
@@ -137,7 +123,6 @@ func (u *userUseCase) RegisterCustomer(name, email, phone, password string, file
 	if file != nil && fileHeader != nil {
 		ext := filepath.Ext(fileHeader.Filename)
 		filename := uuid.New().String() + ext
-
 		uploadedUrl, err := u.uploader.UploadFile(file, filename)
 		if err != nil {
 			return nil, err
@@ -146,6 +131,7 @@ func (u *userUseCase) RegisterCustomer(name, email, phone, password string, file
 	}
 
 	user := &domain.User{
+		UUID:          uuid.New().String(),
 		Name:          name,
 		Email:         email,
 		PhoneNumber:   formattedPhone,
@@ -155,20 +141,16 @@ func (u *userUseCase) RegisterCustomer(name, email, phone, password string, file
 		DominantColor: imgResult.DominantColor,
 	}
 
-	if err := u.repo.Create(user); err != nil {
+	if err := u.repo.Create(ctx, user); err != nil {
 		return nil, err
 	}
 
-	user.Role = domain.Role{
-		ID:   CustomerRoleID,
-		Name: CustomerRoleName,
-	}
-
+	user.Role = domain.Role{ID: CustomerRoleID, Name: CustomerRoleName}
 	return user, nil
 }
 
-func (u *userUseCase) Login(email, password string) (string, *domain.User, error) {
-	user, err := u.repo.FindByEmail(email)
+func (u *userUseCase) Login(ctx context.Context, email, password string) (string, *domain.User, error) {
+	user, err := u.repo.FindByEmail(ctx, email)
 	if err != nil {
 		return "", nil, errors.New("invalid credentials")
 	}
@@ -177,7 +159,8 @@ func (u *userUseCase) Login(email, password string) (string, *domain.User, error
 		return "", nil, errors.New("invalid credentials")
 	}
 
-	token, err := utils.GenerateToken(user.ID, user.Role.Name, u.jwtSecret)
+	// PERBAIKAN: Gunakan user.UUID (string), bukan user.ID (uint)
+	token, err := utils.GenerateToken(user.UUID, user.Role.Name, u.jwtSecret)
 	if err != nil {
 		return "", nil, err
 	}
@@ -185,7 +168,7 @@ func (u *userUseCase) Login(email, password string) (string, *domain.User, error
 	return token, user, nil
 }
 
-func (u *userUseCase) Logout(tokenString string) error {
+func (u *userUseCase) Logout(ctx context.Context, tokenString string) error {
 	token, _, err := new(jwt.Parser).ParseUnverified(tokenString, jwt.MapClaims{})
 	if err != nil {
 		return err
@@ -208,31 +191,15 @@ func (u *userUseCase) Logout(tokenString string) error {
 		return nil
 	}
 
-	err = u.cache.Set("blacklist:"+tokenString, "revoked", timeRemaining)
-	return err
+	return u.cache.Set(ctx, "blacklist:"+tokenString, "revoked", timeRemaining)
 }
 
-func (u *userUseCase) GetAllAdmins() ([]domain.User, error) {
-	cachedData, err := u.cache.Get("list_admins")
-	if err == nil {
-		var users []domain.User
-		json.Unmarshal([]byte(cachedData), &users)
-		return users, nil
-	}
-
-	users, err := u.repo.FindAll()
-	if err != nil {
-		return nil, err
-	}
-
-	jsonData, _ := json.Marshal(users)
-	u.cache.Set("list_admins", jsonData, 5*time.Minute)
-
-	return users, nil
+func (u *userUseCase) GetAllAdmins(ctx context.Context, page, limit int) ([]domain.User, int64, error) {
+	return u.repo.FindAll(ctx, page, limit)
 }
 
-func (u *userUseCase) UpdateProfile(userID uint, name, phone, password string, file multipart.File, fileHeader *multipart.FileHeader) (*domain.User, error) {
-	user, err := u.repo.FindByID(userID)
+func (u *userUseCase) UpdateProfile(ctx context.Context, userID uint, name, phone, password string, file multipart.File, fileHeader *multipart.FileHeader) (*domain.User, error) {
+	user, err := u.repo.FindByID(ctx, userID)
 	if err != nil {
 		return nil, errors.New("user not found")
 	}
@@ -240,7 +207,6 @@ func (u *userUseCase) UpdateProfile(userID uint, name, phone, password string, f
 	if name != "" {
 		user.Name = name
 	}
-
 	if phone != "" {
 		formattedPhone, err := utils.FormatPhoneNumber(phone, "ID")
 		if err != nil {
@@ -248,7 +214,6 @@ func (u *userUseCase) UpdateProfile(userID uint, name, phone, password string, f
 		}
 		user.PhoneNumber = formattedPhone
 	}
-
 	if password != "" {
 		hashedPassword, err := utils.HashPassword(password)
 		if err != nil {
@@ -266,10 +231,8 @@ func (u *userUseCase) UpdateProfile(userID uint, name, phone, password string, f
 		}
 
 		file.Seek(0, io.SeekStart)
-
 		ext := filepath.Ext(fileHeader.Filename)
 		filename := uuid.New().String() + ext
-
 		uploadedUrl, err := u.uploader.UploadFile(file, filename)
 		if err != nil {
 			return nil, err
@@ -277,19 +240,14 @@ func (u *userUseCase) UpdateProfile(userID uint, name, phone, password string, f
 		user.ProfileImage = uploadedUrl
 	}
 
-	if err := u.repo.Update(user); err != nil {
+	if err := u.repo.Update(ctx, user); err != nil {
 		return nil, err
 	}
 
-	u.cache.Del("list_admins")
-
+	u.cache.Del(ctx, "list_admins")
 	return user, nil
 }
 
-func (u *userUseCase) GetProfile(userID uint) (*domain.User, error) {
-	user, err := u.repo.FindByID(userID)
-	if err != nil {
-		return nil, errors.New("user not found")
-	}
-	return user, nil
+func (u *userUseCase) GetProfile(ctx context.Context, userID uint) (*domain.User, error) {
+	return u.repo.FindByID(ctx, userID)
 }

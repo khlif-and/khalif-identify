@@ -15,8 +15,8 @@ func MaxAdminLimit(repo domain.UserRepository) gin.HandlerFunc {
 		const MaxAdminCount = 3
 		const AdminRoleID = 1
 
-		// Cek Database
-		currentCount, err := repo.CountByRoleID(AdminRoleID)
+		// Perbaikan: Tambahkan Context dari request
+		currentCount, err := repo.CountByRoleID(c.Request.Context(), AdminRoleID)
 		if err != nil {
 			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "Failed to check admin quota"})
 			return
